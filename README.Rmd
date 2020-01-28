@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://www.tidyverse.org/lifecycle/#experimental)
 <!-- badges: end -->
 
-
+This package is inspired by the generative art of [Eric Davidson](https://github.com/erdavids/Simulated-Code)
 
 ## Installation
 
