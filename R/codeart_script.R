@@ -7,8 +7,8 @@
 codeart_script <- function(path,char_size=5,segment_sep=20,indent_size=50,cols){
   script <- readLines(path)
 
-  parsed_script <- utils::getParseData((parse(text=script))) %>%
-  parse_script <- parse_script[parse_script["terminal"],]
+  parsed_script <- utils::getParseData((parse(text=script)))
+  parsed_script <- parsed_script[parsed_script[["terminal"]],]
 
   del_lines <- c("EQ","EQ_SUB","GT","LT","EQ_ASSIGN","FUNCTION","NULL_CONST",
                  "SYMBOL_FORMALS","LBB","NEXT","{","}","GE","EQ_FORMALS","SPECIAL","SYMBOL_SUB")
@@ -17,40 +17,78 @@ codeart_script <- function(path,char_size=5,segment_sep=20,indent_size=50,cols){
   df <- parsed_script
   df[["token"]][df[["text"]]=="%>%"] <- "PIPE"
 
+  df_token <- stats::aggregate(df[,c("token")],by=list(df$line1),FUN=function(x) paste0(x,collapse=" "))
+  df_chars <- stats::aggregate(df[,c("text")],by=list(df$line1),FUN=function(x) sum(nchar(as.character(x))))
+  df_indent <- stats::aggregate(df[,c("col1")],by=list(df$line1),FUN=function(x) min(x))
 
+  df <- data.frame(line1 = df_token[["Group.1"]],
+                   line  = df_token[["x"]],
+                   chars = df_chars[["x"]],
+                   indent = df_indent[["x"]])
 
-  df <- parsed_script %>%
-    # dplyr::filter(text!="%in%") %>%
-    group_by(line1) %>%
-    dplyr::summarise(line=paste0(token,collapse=" "),chars=sum(nchar(text)),
-                     indent=min(col1)) %>%
-    mutate(line=str_remove_all(line,"'")) %>%
-    mutate(line=str_remove_all(line,"\\+|\\-|/|\\*|\\(|\\)|\\]|\\[|\\$|~|AND |NE |! |: ")) %>%
-    mutate(line=str_remove_all(line,"NS_GET |SYMBOL_PACKAGE ")) %>%
-    mutate(line=str_replace_all(line,"\\s+"," ")) %>%
-    mutate(line=str_replace_all(line,"^\\}$"," ")) %>%
-    mutate(line=str_replace_all(line,"NUM_CONST : NUM_CONST","NUM_CONST")) %>%
-    mutate(line=if_else(str_detect(line,"^FOR"),"FOR FORBLOCK",line)) %>%
-    mutate(line=if_else(str_detect(line,"^IF"),"IF IFBLOCK",line)) %>%
-    mutate(line=if_else(str_detect(line,"^ELSE IF"),"IF IFBLOCK",line)) %>%
-    mutate(line=str_replace_all(line,paramblock," PARAMBLOCK ")) %>%
-    mutate(line=str_replace_all(line," SYMBOL_SUB EQ_SUB "," SYMBOL ")) %>%
-    mutate(line=if_else(str_detect(line,"^SYMBOL LEFT_ASSIGN") &!str_detect(line,"SYMBOL_FUNCTION_CALL"),"SYMBOL ASSIGNBLOCK",line)) %>%
-    mutate(line=str_remove_all(line,"LEFT_ASSIGN |,\\s*")) %>%
-    mutate(line=str_replace_all(line,"\\b(\\w+)(\\b\\W+\\b\\1\\b)*","\\1")) %>%
-    mutate(line=str_squish(line)) %>%
-    # print(n=64)
-    mutate(lines=str_split(line," ")) %>%
-    unnest(lines) %>%
-    dplyr::filter(!lines%in%del_lines) %>%
-    mutate(col=cols[.$lines]) %>%
-    group_by(line1) %>%
-    mutate(numsym=n()) %>%
-    ungroup() %>%
-    mutate(x=if_else(numsym==1,50+(indent-1)*char_size,NA_real_)) %>%
-    group_by(line1) %>%
-    mutate(x=if_else(numsym!=1 & !duplicated(line1),50+(indent-1)*char_size,x)) %>%
-    ungroup() %>%
-    mutate(xend=ifelse(!is.na(x),case_when(!lines%in%c("IF","FOR")~x+chars*char_size/numsym+sample(-2*char_size:0,1),
-                                           TRUE~x+char_size*10),NA_real_))
+  df[["line"]] <- gsub("'","",df[["line"]])
+  df[["line"]] <- gsub("\\+|\\-|/|\\*|\\(|\\)|\\]|\\[|\\$|~|AND |NE |! |: ","",df[["line"]])
+  df[["line"]] <- gsub("NS_GET |SYMBOL_PACKAGE ","",df[["line"]])
+  df[["line"]] <- gsub("\\s+"," ",df[["line"]])
+  df[["line"]] <- gsub("^\\}$"," ",df[["line"]])
+  df[["line"]] <- gsub("NUM_CONST : NUM_CONST","NUM_CONST",df[["line"]])
+  df[["line"]] <- ifelse(grepl("^FOR",df[["line"]]),"FOR FORBLOCK",df[["line"]])
+  df[["line"]] <- ifelse(grepl("^IF",df[["line"]]),"IF IFBLOCK",df[["line"]])
+  df[["line"]] <- ifelse(grepl("^ELSE IF",df[["line"]]),"IF IFBLOCK",df[["line"]])
+  df[["line"]] <- gsub(paramblock," PARAMBLOCK ",df[["line"]])
+  df[["line"]] <- gsub(" SYMBOL_SUB EQ_SUB "," SYMBOL ",df[["line"]])
+  df[["line"]] <- ifelse(grepl("^SYMBOL LEFT_ASSIGN",df[["line"]]) &
+                           !grepl("SYMBOL_FUNCTION_CALL",df[["line"]]),
+                         "SYMBOL ASSIGNBLOCK",df[["line"]])
+  df[["line"]] <- gsub("LEFT_ASSIGN |,\\s*","",df[["line"]])
+  df[["line"]] <- gsub("\\b(\\w+)(\\b\\W+\\b\\1\\b)*","\\1",df[["line"]])
+  df[["line"]] <- gsub("\\s+"," ",df[["line"]])
+  df[["line"]] <- gsub("^\\s+","",df[["line"]])
+  df[["line"]] <- gsub("\\s+$","",df[["line"]])
+
+  line_list <- strsplit(df[["line"]]," ")
+  list_length <- sapply(line_list,length)
+  line_list[list_length==0] <- ""
+  list_length[list_length==0] <- 1
+
+  df <- data.frame(line1  = rep(df[["line1"]],list_length),
+                   lines   = as.character(unlist(line_list)),
+                   chars  = rep(df[["chars"]],list_length),
+                   indent = rep(df[["indent"]],list_length),stringsAsFactors = FALSE)
+
+  df <- df[!df[["lines"]]%in%del_lines,]
+  df[["col"]] <- cols[df[["lines"]]]
+
+  tmp <- as.data.frame(table(df[["line1"]]))
+  names(tmp)  <- c("line1","numsym")
+  df <- merge(df,tmp,all.x = TRUE)
+  df[["x"]] <- ifelse(df[["numsym"]]==1,50+(df[["indent"]]-1)*char_size,NA_real_)
+  df[["x"]] <- ifelse(!duplicated(df[["line1"]]) & df[["numsym"]]!=1,50+(df[["indent"]]-1)*char_size,df[["x"]])
+  df[["xend"]] <- ifelse(!is.na(df[["x"]]) & !df[["lines"]]%in%c("IF","FOR"),
+                         df[["x"]]+df[["chars"]]*char_size/df[["numsym"]]+sample(-2*char_size:0,1),NA_real_)
+  df[["xend"]] <- ifelse(!is.na(df[["x"]]) & df[["lines"]]%in%c("IF","FOR"),df[["x"]]+char_size*10,df[["xend"]])
+
+  for(i in 2:nrow(df)){
+    if(is.na(df[["x"]][i]) & df[["line1"]][i-1]==df[["line1"]][i]){
+      df[["x"]][i] <- df[["xend"]][i-1]+segment_sep
+      df[["xend"]][i] <- df[["x"]][i]+df[["chars"]][i]*char_size/df[["numsym"]][i]+sample(-2*char_size:0,1)
+    }
+    if(df[["lines"]][i]=="PIPE"){
+      df[["x"]][i] <- df[["x"]][i]-segment_sep/2
+      df[["xend"]][i] <- df[["x"]][i]
+    }
+
+  }
+
+  #adjust param blocks ----
+  for(i in 2:nrow(df)){
+    if(df[["lines"]][i]=="PARAMBLOCK" & df[["lines"]][i-1]=="PARAMBLOCK" & df[["line1"]][i]!=df[["line1"]][i-1]){
+      tmp <- df[["x"]][i]
+      df[["x"]][i] <- df[["x"]][i-1]
+      df[["xend"]][i] <- df[["xend"]][i]-(tmp-df[["x"]][i])
+    }
+  }
+
+  df[["y"]] <- df[["yend"]] <- df[["line1"]]
+  df
 }
