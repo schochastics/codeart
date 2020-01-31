@@ -29,6 +29,30 @@ You can install the released version of codeart from GitHub with:
 remotes::install_github("schochastics/codeart")
 ```
 
-## Example
+## Examples
 
+The code below shows how to transform an existing R script into "abstract art".
+
+```{r example_script, eval=FALSE}
+library(codeart)
+library(showtext)
+
+font_add_google("Niconne", "niconne")
+showtext_auto()
+
+dat <- codeart_script("R/codeart_script.R")
+plot_codeart_script(dat,font = "niconne",title = "codeart_script.R",caption = "@schochastics")
+
+```
+
+<img src="man/figures/example_script.png">
+
+
+You can also generate random art with the package.
+```{r example_random,fig.height=7,warning=FALSE}
+library(codeart)
+dat <- codeart_random()
+plot_codeart_rand(dat)
+
+```
 
